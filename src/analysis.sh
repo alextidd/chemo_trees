@@ -11,24 +11,28 @@ module load bwa
 module load samtools
 module load hairpin
 
-#Set primary variables
+# Set primary variables
 DONOR_ID=PD55782
 LONG_DONOR_ID=PD55782_75M1
 ALL_PROJECT_NUMBERS=2911 #If have more than one project number , can have as comma separated
 EXP_ID=set1
 DONOR_AGE=75 #Age is used at the end to create ultrametric trees scaled by age
 
-#Secondary variables
+# Secondary variables
 PD_NUMBERS=$DONOR_ID #If have more than one PD number (e.g. for HSCT), can have as comma separate
 MATS_AND_PARAMS_DIR=/lustre/scratch126/casm/team154pc/ld18/chemo/filtering_runs/mats_and_params
 ROOT_DIR=/lustre/scratch126/casm/team154pc/ld18/chemo/${LONG_DONOR_ID}/${EXP_ID}
 SNV_BEDFILE_NAME=chemo_${LONG_DONOR_ID}_${EXP_ID}_caveman.bed
 INDEL_BEDFILE_NAME=chemo_${LONG_DONOR_ID}_${EXP_ID}_pindel.bed
 MS_FILTERED_BEDFILE_NAME=chemo_${LONG_DONOR_ID}_${EXP_ID}_postMS_SNVs.bed
-
-RUN_ID_M=${EXP_ID}
 RUN_ID_TB=${EXP_ID}_reduced
 IFS=',' read -r -a PROJECT_ARRAY <<< "$ALL_PROJECT_NUMBERS"
+
+# reference fasta
+fasta=/data/blastdb/Ensembl/Human/GRCh38/genome/softmasked_dusted/toplevel.with_nonref_and_GRCh38_p7.no_duplicate.softmasked_dusted.fa
+
+# directory
+cd $ROOT_DIR/
 
 #--------------------Submit LCM filtering jobs-----------------------------
 # download QC excel file from Canapps & check if you're keeping all samples - note down if you're not!
@@ -37,69 +41,126 @@ IFS=',' read -r -a PROJECT_ARRAY <<< "$ALL_PROJECT_NUMBERS"
 # ~/Data/chemo/scripts/Sub_filter/generate_commands_for_subs_filtering_etc.R
 # scp ~/Data/chemo/scripts/Sub_filter/commands/${DONOR_ID}_*flags.txt ld18@farm5-login:/lustre/scratch126/casm/team154pc/ld18/chemo/${LONG_DONOR_ID}/${EXP_ID}/
 mkdir -p $ROOT_DIR/hairpin/output_files
-cd $ROOT_DIR/
-bsub -J"run[1-`wc -l<PD55782_75M1_v_flags.txt`]%50" -o cmd.%J.%I.out -e cmd.%J.%I.err -R "select[mem>12000] rusage[mem=12000] span[hosts=1]" -M12000 -n 12 ./wrapper.sh PD55782_75M1_v_flags.txt PD55782_75M1_b_flags.txt PD55782_75M1_o_flags.txt
+  
+bsub \
+  -J"run[1-`wc -l<${LONG_DONOR_ID}_v_flags.txt`]%50" \
+  -o cmd.%J.%I.out \
+  -e cmd.%J.%I.err \
+  -R "select[mem>12000] rusage[mem=12000] span[hosts=1]" \
+  -M12000 \
+  -n 12 \
+  ./wrapper.sh \
+  ${LONG_DONOR_ID}_v_flags.txt \
+  ${LONG_DONOR_ID}_b_flags.txt \
+  ${LONG_DONOR_ID}_o_flags.txt
 
-bsub -J"run[1-`wc -l<${LONG_DONOR_ID}_v_flags.txt`]%50" -o cmd.%J.%I.out -e cmd.%J.%I.err -R "select[mem>12000] rusage[mem=12000] span[hosts=1]" -M12000 -n 12 ./wrapper.sh ${LONG_DONOR_ID}_v_flags.txt ${LONG_DONOR_ID}_b_flags.txt ${LONG_DONOR_ID}_o_flags.txt
+# hairpin -v $v_file -b $b_file -o $o_file -g "38"
 
-# bsub -R "select[mem>12000] rusage[mem=12000] span[hosts=1]" -M12000 -o hairpin/out.%J.log -e hairpin/err.%J.log -n 12 ./wrapper.sh ${LONG_DONOR_ID}_v_flags.txt ${LONG_DONOR_ID}_b_flags.txt ${LONG_DONOR_ID}_o_flags.txt
-
-# bsub -R "select[mem>12000] rusage[mem=12000] span[hosts=1]" -M12000 -o hairpin/out.%J.log -e hairpin/err.%J.log -n 12 ../.././wrapper.sh PD55782_75M1_v_flags.txt PD55782_75M1_b_flags.txt PD55782_75M1_o_flags.txt
-# /lustre/scratch126/casm/team154pc/ms56/my_programs/Submitting_Mathijs_filters_jobs.R -p $ALL_PROJECT_NUMBERS -s $PD_NUMBERS -o $ROOT_DIR/MS_filters/output_files -q normal
-
-# if files are generated in ${ROOT_DIR} move them to the hairpin directory
+# removing artefacts caused by DNA forming hairpins
+# explained in Reliable detection of somatic mutations in solid tissues by laser-capture microdissection and low-input DNA sequencing
 
 #--------------------SNV analysis-----------------------------
+# running cgpVAF (wrapper for caveman pileup / exonerate) - takes all good mutations from hairpin output 
+# creating matrix of mutations and their depths / vafs in all samples 
 mkdir -p $ROOT_DIR/caveman_raw/caveman_pileup/output; cd $ROOT_DIR/caveman_raw
-/lustre/scratch126/casm/team154pc/ms56/my_programs/import_new_samples_only.R -p $ALL_PROJECT_NUMBERS -s $PD_NUMBERS -t SNVs
-cut -f 1,2,4,5 *.caveman_c.annot.vcf_pass_flags|sort|uniq>caveman_pileup/$SNV_BEDFILE_NAME
+/lustre/scratch126/casm/team154pc/ms56/my_programs/import_new_samples_only.R \
+  -p $ALL_PROJECT_NUMBERS \
+  -s $PD_NUMBERS \
+  -t SNVs
+  
+cut -f 1,2,4,5 *.caveman_c.annot.vcf_pass_flags | sort | uniq \
+> caveman_pileup/$SNV_BEDFILE_NAME
+
 cd $ROOT_DIR/caveman_raw/caveman_pileup
 
-#Run createVafCmd - with input value '3' (this is the option for selecting the caveman files as input)
+# Run createVafCmd - with input value '3' (this is the option for selecting the caveman files as input)
+# creating caveman files / setting up
 for PROJECT_NUMBER in "${PROJECT_ARRAY[@]}"; do
-    echo "3"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -g /lustre/scratch126/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/genome.fa -hdr /lustre/scratch126/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz -mq 30  -bo 1  -b $SNV_BEDFILE_NAME
+  echo "3" |
+  createVafCmd.pl \
+    -pid $PROJECT_NUMBER \
+    -o output \
+    -g $fasta \
+    -hdr /lustre/scratch126/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz \
+    -mq 30 \
+    -bo 1 \
+    -b $SNV_BEDFILE_NAME
 done
-# echo "3"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -g /lustre/scratch126/casm/team78pipelines/reference/human/GRCh37d5/genome.fa -hdr /lustre/scratch126/casm/team78pipelines/reference/human/GRCh37d5/shared/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz -mq 30  -bo 1  -b $SNV_BEDFILE_NAME
 
-#Then run the "create_split_config_ini.R" script in the output folder
+# Then run the "create_split_config_ini.R" script in the output folder
 PROJECT_NUMBER=${PROJECT_ARRAY[0]}
-cd $ROOT_DIR/caveman_raw/caveman_pileup/output
-# /lustre/scratch126/casm/team154pc/ms56/my_programs/create_split_config_ini.R -p $PROJECT_NUMBER
-/lustre/scratch126/casm/team154pc/ld18/chemo/scripts/create_split_config_ini.R -p $PROJECT_NUMBER
-cd $ROOT_DIR/caveman_raw/caveman_pileup
+(
+  cd $ROOT_DIR/caveman_raw/caveman_pileup/output
+  /lustre/scratch126/casm/team154pc/ld18/chemo/scripts/create_split_config_ini.R \
+    -p $PROJECT_NUMBER
+)
 
-#Then re-run the createVafCmd.pl script with the new config file  - with input value '3' (this is the option for selecting the caveman files as input)
-echo "3"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -i output/${PROJECT_NUMBER}_cgpVafConfig_split.ini -g /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/genome.fa -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz -mq 30  -bo 1  -b $SNV_BEDFILE_NAME
+# Then re-run the createVafCmd.pl script with the new config file  
+# - with input value '3' (this is the option for selecting the caveman files as input)
+echo "3" | 
+createVafCmd.pl \
+  -pid $PROJECT_NUMBER \
+  -o output \
+  -i output/${PROJECT_NUMBER}_cgpVafConfig_split.ini \
+  -g $fasta \
+  -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz \
+  -mq 30 \
+  -bo 1 \
+  -b $SNV_BEDFILE_NAME
 
-#Update the run_bsub.sh command to allow more jobs in the array to run together and get more memory
-sed -e 's/\%5/\%50/g;s/2000/4000/g;s/500/1000/g;' run_bsub.sh >run_bsub_updated.sh
+# Update the run_bsub.sh command to allow more jobs in the array to run together and get more memory
+sed -e 's/\%5/\%50/g;s/2000/4000/g;s/500/1000/g;' run_bsub.sh > run_bsub_updated.sh
 
-#Run this if need to switch to the long queue (not normally necessary)
-#sed -i -e 's/normal/long/g' run_bsub_updated.sh
-
+# Run the job
 bash run_bsub_updated.sh
 
 #--------------------Indel analysis-----------------------------
-mkdir -p $ROOT_DIR/pindel_raw/pindel_pileup/output; cd $ROOT_DIR/pindel_raw
-/lustre/scratch126/casm/team154pc/ms56/my_programs/import_new_samples_only.R -p $ALL_PROJECT_NUMBERS -s $PD_NUMBERS -t indels
-cut -f 1,2,4,5 *.pindel.annot.vcf_pass_flags|sort|uniq>pindel_pileup/$INDEL_BEDFILE_NAME
+mkdir -p $ROOT_DIR/pindel_raw/pindel_pileup/output
+cd $ROOT_DIR/pindel_raw
+
+/lustre/scratch126/casm/team154pc/ms56/my_programs/import_new_samples_only.R \
+  -p $ALL_PROJECT_NUMBERS \
+  -s $PD_NUMBERS \
+  -t indels
+cut -f 1,2,4,5 *.pindel.annot.vcf_pass_flags | sort | uniq \
+> pindel_pileup/$INDEL_BEDFILE_NAME
+
 cd $ROOT_DIR/pindel_raw/pindel_pileup
 
-#Run createVafCmd for each project id containing samples - with input value '1' (this is the option for selecting the pindel files as input)
+# Run createVafCmd for each project id containing samples 
+# - with input value '1' (this is the option for selecting the pindel files as input)
 for PROJECT_NUMBER in "${PROJECT_ARRAY[@]}"; do
-    echo "1"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -g /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/genome.fa -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz -mq 30  -bo 1  -b $INDEL_BEDFILE_NAME
+  echo "1" | 
+  createVafCmd.pl \
+    -pid $PROJECT_NUMBER \
+    -o output \
+    -g $fasta \
+    -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz \
+    -mq 30 \
+    -bo 1 \
+    -b $INDEL_BEDFILE_NAME
 done
-# echo "1"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -g /lustre/scratch119/casm/team78pipelines/reference/human/GRCh37d5/genome.fa -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh37d5/shared/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz -mq 30  -bo 1  -b $INDEL_BEDFILE_NAME
 
-#Then run the "create_split_config_ini.R" script in the output folder
+# Then run the "create_split_config_ini.R" script in the output folder
 PROJECT_NUMBER=${PROJECT_ARRAY[0]}
 cd $ROOT_DIR/pindel_raw/pindel_pileup/output
-/lustre/scratch126/casm/team154pc/ld18/chemo/scripts/create_split_config_ini.R -p $PROJECT_NUMBER
+/lustre/scratch126/casm/team154pc/ld18/chemo/scripts/create_split_config_ini.R \
+  -p $PROJECT_NUMBER
+  
 cd $ROOT_DIR/pindel_raw/pindel_pileup
 
-#Then re-run the createVafCmd.pl script with the new config file - with input value '1' (this is the option for selecting the pindel files as input)
-# echo "1"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -i output/${PROJECT_NUMBER}_cgpVafConfig_split.ini -g /lustre/scratch119/casm/team78pipelines/reference/human/GRCh37d5/genome.fa -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh37d5/shared/ucscHiDepth_0.01_mrg1000_no_exon_coreChrs.bed.gz -mq 30  -bo 1  -b $INDEL_BEDFILE_NAME
-echo "1"|createVafCmd.pl -pid $PROJECT_NUMBER  -o output -i output/${PROJECT_NUMBER}_cgpVafConfig_split.ini -g /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/genome.fa -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz -mq 30  -bo 1  -b $INDEL_BEDFILE_NAME
+# Then re-run the createVafCmd.pl script with the new config file 
+# - with input value '1' (this is the option for selecting the pindel files as input)
+echo "1" | 
+createVafCmd.pl \
+  -pid $PROJECT_NUMBER \
+  -o output \
+  -i output/${PROJECT_NUMBER}_cgpVafConfig_split.ini \
+  -g $fasta \
+  -hdr /lustre/scratch119/casm/team78pipelines/reference/human/GRCh38_full_analysis_set_plus_decoy_hla/shared/HiDepth_mrg1000_no_exon_coreChrs_v3.bed.gz \
+  -mq 30 \
+  -bo 1 \
+  -b $INDEL_BEDFILE_NAME
 
 #Update the run_bsub.sh command to allow more jobs in the array to run together & get more memory
 sed -e 's/\%5/\%50/g;s/2000/4000/g' run_bsub.sh >run_bsub_updated.sh
@@ -111,6 +172,7 @@ bash run_bsub_updated.sh
 
 #--------------------ONCE cgpVAF HAS COMPLETED-----------------------------
 #-----------------------------SNV merge-----------------------------
+# cgpVAF runs by chromosome -> taking each individual chr file and merging
 # bsub -o $PWD/log.%J \
 #     -e $PWD/err.%J \
 #     -q normal \
@@ -173,6 +235,7 @@ paste output.* > merged_indels_${EXP_ID}.tsv && rm output.*
 mv $ROOT_DIR/pindel_raw/pindel_pileup/output/output/PDv38is_wgs/indel/merged_indels_${EXP_ID}.tsv $ROOT_DIR/
 
 #--------------------AFTER ALL CGPVAF MATRICES ARE GENERATED-----------------------------
+# generates all parameters for each mutation 
 cd $ROOT_DIR
 mkdir -p log_files
 mkdir -p err_files
@@ -256,8 +319,6 @@ bsub -o $ROOT_DIR/log_files/sensitivity.log.%J -e $ROOT_DIR/err_files/sensitivit
 # -t The age ('time') of the individual - for building the age-adjusted ultrametric tree
 # -j Option to do initial tree-building with just the SNVs (i.e. don't' include indels)
 # -a Option to keep an ancestral branch
-
-RUN_ID_TB=${EXP_ID}_reduced
 
 #bsub -o $ROOT_DIR/log_files/treebuild.log.%J -e $ROOT_DIR/err_files/treebuild.err.%J \
 #    -q basement -R 'select[mem>=24000] span[hosts=1] rusage[mem=24000]' \
