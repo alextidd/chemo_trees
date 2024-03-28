@@ -23,4 +23,3 @@ new_commands <- sapply(sample_ids, function(sample_id){
 fileConn<-file(sprintf("~/chemo/%s_commands_hairpin.txt", donor_id))
 writeLines(new_commands, fileConn)
 close(fileConn)
-
