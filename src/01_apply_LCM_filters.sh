@@ -44,4 +44,4 @@ nextflow run $nf \
     --mut_type ${mut_type} \
     --reference_genome ${reference_genome} \
     --high_depth_region ${high_depth_region} \
-    --outdir ${out_dir}"
+    --outdir ${out_dir}

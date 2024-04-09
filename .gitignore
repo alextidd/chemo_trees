@@ -5,3 +5,4 @@ out/
 .nextflow.log*
 test_data/
 data/
+.nextflow
