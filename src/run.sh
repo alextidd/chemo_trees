@@ -1,6 +1,13 @@
 #!/bin/bash
 # cd /lustre/scratch126/casm/team154pc/at31/chemo_trees; ~/bin/jsub lsf -q week -n lcm_filtering  -m 2g -l log "bash src/run.sh" | bsub
 
+# dirs
+wd=/lustre/scratch126/casm/team154pc/at31/chemo_trees/
+cd $wd
+
+# load singularity
+module load singularity
+
 # run the workflow 
 nextflow run nf-chemo-trees/ \
     --sample_sheet data/sample_sheet.csv \
