@@ -3,8 +3,7 @@ out/
 .nextflow/
 .nextflow.log
 .nextflow.log*
-test_data/
+test/
 data/
 .nextflow
 log/
-test/
