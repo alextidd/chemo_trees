@@ -21,6 +21,7 @@ sample_sheet <-
                 donor_id = donor_id,
                 sample_id = basename(sample_dir),
                 project_id = project_id,
+                experiment_id = experiment_id,
                 bam = file.path(sample_dir, paste0(sample_id, ".sample.dupmarked.bam")),
                 pindel_vcf = file.path(sample_dir, paste0(sample_id, ".pindel.annot.vcf.gz")),
                 caveman_vcf = file.path(sample_dir, paste0(sample_id, ".caveman_c.annot.vcf.gz"))
