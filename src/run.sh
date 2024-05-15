@@ -5,6 +5,9 @@
 wd=/lustre/scratch126/casm/team154pc/at31/chemo_trees/
 cd $wd
 
+# modules
+module load singularity
+
 # run the workflow 
 nextflow run nf-chemo-trees/ \
     --sample_sheet data/sample_sheet.csv \
