@@ -1,9 +1,5 @@
 #!/bin/bash
-# cd /lustre/scratch126/casm/team154pc/at31/chemo_trees; ~/bin/jsub lsf -q week -n lcm_filtering  -m 2g -l log "bash src/run.sh" | bsub
-
-# dirs
-wd=/lustre/scratch126/casm/team154pc/at31/chemo_trees/
-cd $wd
+# cd /lustre/scratch126/casm/team154pc/at31/chemo_trees; ~/bin/jsub lsf -q week -n chemo_trees  -m 2g -l log "bash src/run.sh" | bsub
 
 # modules
 module load singularity
