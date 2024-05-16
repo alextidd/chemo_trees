@@ -9,4 +9,5 @@ nextflow run nf-chemo-trees/ \
     --sample_sheet data/sample_sheet.csv \
     --outdir out \
     -c /lustre/scratch125/casm/team268im/at31/RA_som_mut/scomatic/config/LSF.config \
-    -resume 
+    -resume \
+    -N at31@sanger.ac.uk
