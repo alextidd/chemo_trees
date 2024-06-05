@@ -1,0 +1,62 @@
+---
+title: "03_visualise"
+author: "Alexandra Tidd"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  html_document:
+    fig_width: 8
+    keep_md: true
+    code_folding: show
+    toc: true
+    toc_float: true
+    toc_collapsed: true
+    toc_depth: 4
+    theme: lumen
+---
+
+```{r setup, include = F, message = F, warning = F, class.source = 'fold-hide'}
+# Rscript -e "rmarkdown::render('src/02_visualise.Rmd', output_dir = 'out/analysis/')" # nolint: line_length_linter.
+
+# knitr opts 
+knitr::opts_knit$set(root.dir = "../")
+knitr::opts_chunk$set(warning = FALSE, dpi = 300, message = FALSE)
+
+# libraries
+library(magrittr)
+```
+
+# Load colony metadata
+
+```{r load_metadata}
+colony_metadata <-
+  readr::read_tsv("out/metadata/colony_metadata.tsv") %>%
+  tibble::column_to_rownames("colony_id")
+```
+
+# Load trees
+
+```{r load_trees}
+trees <-
+  list.files("out/PD56034/sequoia/", pattern = "\\.tree$", 
+             full.names = TRUE) %>%
+  purrr::set_names(., basename(.)) %>%
+  purrr::map(function(file) {
+    tree <- ape::read.tree(file)
+    colours <- colony_metadata[tree$tip.label,] %>%
+      dplyr::mutate(colour = dplyr::case_when(
+                      colony_timepoint == "pre" ~ "blue",
+                      colony_timepoint == "post" ~ "red")) %>%
+      {setNames(.$colour, rownames(.))}
+    list(tree = tree, colours = colours)
+  })
+```
+
+# Plot trees
+
+```{r plot_trees, fig.height = 10}
+trees %>% 
+  purrr::map2(.y = names(trees), function(tree, name) {
+    plot(tree$tree, tip.color = tree$colours, cex = 0.5, main = name)
+    ape::axisPhylo(side = 1, backward = FALSE)
+  })
+```

@@ -1,5 +1,5 @@
 #!/bin/bash
-# cd /lustre/scratch126/casm/team154pc/at31/chemo_trees; ~/bin/jsub lsf -q week -n chemo_trees  -m 2g -l log "bash src/run.sh" | bsub
+# cd /lustre/scratch126/casm/team154pc/at31/chemo_trees; ~/bin/jsub lsf -q week -n chemo_trees  -m 2g -l log "bash src/01_run_chemo_trees.sh" | bsub
 
 # modules
 module load singularity
