@@ -1,5 +1,5 @@
 ---
-title: "03_visualise"
+title: "02_visualise"
 author: "Alexandra Tidd"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
@@ -17,46 +17,243 @@ output:
 ```{r setup, include = F, message = F, warning = F, class.source = 'fold-hide'}
 # Rscript -e "rmarkdown::render('src/02_visualise.Rmd', output_dir = 'out/analysis/')" # nolint: line_length_linter.
 
-# knitr opts 
+# knitr opts
 knitr::opts_knit$set(root.dir = "../")
 knitr::opts_chunk$set(warning = FALSE, dpi = 300, message = FALSE)
 
 # libraries
 library(magrittr)
+library(ggplot2)
+source("../bin/values_to_colors.R")
 ```
 
-# Load colony metadata
+# Load SNVs and indels
+
+We load the matrix of variant counts from the `Sequoia` output. This includes 
+all indels and SNVs after filtering germline and artifactual variants.
+
+```{r load_muts}
+nv_filtered <-
+  read.table("out/PD56034/sequoia/PD56034_both_NV_filtered_all.txt") %>%
+  tibble::as_tibble(rownames = "var") %>%
+  tidyr::separate_wider_delim(cols = "var", delim = "_",
+                              names = c("chr", "pos", "ref", "alt")) %>%
+  # classify variant types
+  dplyr::mutate(
+    var_type = dplyr::case_when(nchar(ref) + nchar(alt) > 2 ~ "indel_count",
+                                nchar(ref) + nchar(alt) == 2 ~ "snv_count")) %>%
+  # binarise counts
+  dplyr::mutate(dplyr::across(where(is.numeric), ~ as.numeric(.x > 0))) %>%
+  # get burdens
+  dplyr::group_by(var_type) %>%
+  dplyr::summarise(dplyr::across(where(is.numeric), sum)) %>%
+  # get one row per colony
+  tidyr::pivot_longer(cols = -var_type, names_to = "colony_id",
+                      values_to = "count") %>%
+  tidyr::pivot_wider(names_from = var_type, values_from = count) %>%
+  # remove normal
+  dplyr::filter(colony_id != "normal")
+```
+
+# Load colony metadata and CanApps QC
 
 ```{r load_metadata}
+# load QC from canapps
+colony_seq_qc <-
+  readxl::read_xls(
+    path = "data/Cancer_Pipeline_Reports_SampleDetails.xls",
+    skip = 2
+  ) %>%
+  dplyr::transmute(colony_id = Sample, sample_coverage = `Seq X`)
+
+# load colony metadata, add QC
 colony_metadata <-
   readr::read_tsv("out/metadata/colony_metadata.tsv") %>%
-  tibble::column_to_rownames("colony_id")
+  # add coverage
+  dplyr::inner_join(colony_seq_qc) %>%
+  # get well row and column ids
+  tidyr::separate_wider_position(
+    cols = "well_id",
+    widths = c("well_column_id" = 1, "well_row_id" = 2),
+    cols_remove = FALSE
+  ) %>%
+  # add burdens
+  dplyr::left_join(nv_filtered)
 ```
 
-# Load trees
+# Plot burden and coverage
 
-```{r load_trees}
-trees <-
-  list.files("out/PD56034/sequoia/", pattern = "\\.tree$", 
-             full.names = TRUE) %>%
-  purrr::set_names(., basename(.)) %>%
-  purrr::map(function(file) {
-    tree <- ape::read.tree(file)
-    colours <- colony_metadata[tree$tip.label,] %>%
-      dplyr::mutate(colour = dplyr::case_when(
-                      colony_timepoint == "pre" ~ "blue",
-                      colony_timepoint == "post" ~ "red")) %>%
-      {setNames(.$colour, rownames(.))}
-    list(tree = tree, colours = colours)
-  })
+## Coverage by plate
+
+```{r plot_cov_by_plate_bar}
+# colour by timepoint x plate id, ordered by row
+colony_metadata %>%
+  dplyr::mutate(colony_id = forcats::fct_reorder(colony_id, well_row_id)) %>%
+  ggplot(aes(x = colony_id, y = sample_coverage, fill = colony_timepoint)) +
+  geom_col() +
+  scale_x_discrete(guide = guide_axis(angle = -90)) +
+  ggh4x::facet_nested(~ colony_timepoint + plate_id,
+    scales = "free_x",
+    space = "free_x"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank())
 ```
+
+While the two post-chemotherapy plates show fairly consistent coverage across 
+colonies, the pre-chemotherapy plate has a few colonies with very high coverage,
+while most colonies have ~ half the coverage of post-chemotherapy.
+
+## Burden by plate
+
+```{r plot_burden_by_plate_bar}
+# colour by timepoint x plate id, ordered by row
+colony_metadata %>%
+  dplyr::mutate(colony_id = forcats::fct_reorder(colony_id, well_row_id)) %>%
+  tidyr::pivot_longer(cols = c("snv_count", "indel_count"),
+                      names_to = "var_type", values_to = "count") %>%
+  ggplot(aes(x = colony_id, y = count, fill = colony_timepoint)) +
+  geom_col() +
+  scale_x_discrete(guide = guide_axis(angle = -90)) +
+  ggh4x::facet_nested(var_type ~ colony_timepoint + plate_id,
+    scales = "free",
+    space = "free_x"
+  ) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank())
+```
+
+We can see that this coverage pattern is also reflected in the resultant 
+burdens, both for SNVs and indels.
+
+## Coverage by plate well
+
+```{r plot_cov_by_well_tile}
+colony_metadata %>%
+  ggplot(aes(x = well_column_id, y = well_row_id, fill = sample_coverage)) +
+  geom_tile() +
+  ggh4x::facet_nested(~ plate_id + colony_timepoint) +
+  theme_classic()
+```
+
+Inspecting the coverage plate-x-well indicates that those 10 colonies with very
+high coverage in the pre-chemotherapy plate are all located consecutively, in 
+wells A01 to B02. This suggests that the strong change in coverage is the 
+result of an experimental error.
+
+## Burden by plate well
+
+```{r plot_burden_by_well_tile}
+# snvs
+colony_metadata %>%
+  ggplot(aes(x = well_column_id, y = well_row_id, fill = snv_count)) +
+  geom_tile() +
+  ggh4x::facet_nested(~ plate_id + colony_timepoint) +
+  theme_classic()
+# indels
+colony_metadata %>%
+  ggplot(aes(x = well_column_id, y = well_row_id, fill = indel_count)) +
+  geom_tile() +
+  ggh4x::facet_nested(~ plate_id + colony_timepoint) +
+  theme_classic()
+```
+
+This is again reflected in the SNVs and indel burdens. This suggests that the 
+burdens are strongly influenced by this technical variate, rather than a true 
+biological difference.
+
+# Plot burdens vs coverage
+
+To be sure, we review the relationship between coverage and burden in SNVs and 
+indels.
+
+```{r plot_burdens_vs_cov, fid.width = 10}
+colony_metadata %>%
+  tidyr::pivot_longer(cols = c("snv_count", "indel_count"),
+                      names_to = "var_type", values_to = "count") %>%
+  ggplot(aes(x = sample_coverage, y = count, color = colony_timepoint)) +
+  geom_point() +
+  facet_wrap(~ var_type, scales = "free_y") +
+  theme_classic()
+```
+
+There appears to be a strong linear relationship between coverage and mutation 
+burden in both SNVs and indels. Additionally, most of the post-chemotherapy 
+colonies have a higher sample coverage than the pre-chemotherapy colonies, with
+a few outlying pre-chemotherapy colonies with very high coverage, and 
+proportionately higher mutational burdens. This reflects what was previously
+observed.
 
 # Plot trees
 
+The topology and branch length of these trees makes sense in light of these 
+findings. The mutation burdens in the pre-chemotherapy colonies are much lower 
+than would be expected given the donor age, except for a few of the tips. This 
+is due to the low coverage.
+
 ```{r plot_trees, fig.height = 10}
-trees %>% 
-  purrr::map2(.y = names(trees), function(tree, name) {
-    plot(tree$tree, tip.color = tree$colours, cex = 0.5, main = name)
-    ape::axisPhylo(side = 1, backward = FALSE)
+colony_metadata %>%
+  {
+    split(., .$donor_id)
+  } %>%
+  purrr::map2(., names(.), function(donor_metadata, donor_id) {
+    files <-
+      file.path("out", donor_id, "sequoia") %>%
+      list.files(pattern = "\\.tree$", full.names = TRUE)
+    if (length(files) > 0) {
+      files %>%
+        purrr::map(function(file) {
+          # load tree
+          tree_obj <- ape::read.tree(file)
+
+          # get rownames
+          dm <- tibble::column_to_rownames(donor_metadata, "colony_id")
+
+          # get metadata variables with multiple values
+          colours <-
+            dm[tree_obj$tip.label, ] %>%
+            dplyr::select(-well_id) %>%
+            purrr::map(~ length(unique(na.omit(.x)))) %>%
+            {
+              .[. > 1]
+            }  %>%
+            purrr::map2(., names(.), function(colour_var_n, colour_var_name) {
+              # get palette
+              colours <- dm[tree_obj$tip.label, colour_var_name]
+              colours <- colours[!is.na(colours)]
+              if (is.numeric(colours)) {
+                pal <-
+                  values_to_colors(colours,
+                    min_val = min(colours),
+                    max_val = max(colours)
+                  )
+                pal <- pal %>% purrr::set_names(colours)
+              } else {
+                if (colour_var_n == 2) {
+                  pal <- c("red", "blue")
+                } else {
+                  pal <- c(RColorBrewer::brewer.pal(colour_var_n, "Set3"))
+                }
+                pal <- pal %>% purrr::set_names(unique(colours))
+              }
+              tree_colours <-
+                pal[dm[tree_obj$tip.label, colour_var_name]]
+
+              # plot
+              plot(tree_obj,
+                tip.color = tree_colours, cex = 0.5,
+                main = basename(file)
+              )
+              ape::axisPhylo(side = 1, backward = FALSE)
+              legend("topright",
+                legend = unique(names(tree_colours)),
+                col = unique(tree_colours), lty = 1:2, cex = 0.8,
+                title = colour_var_name
+              )
+            })
+        })
+    }
   })
 ```
