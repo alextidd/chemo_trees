@@ -2,7 +2,7 @@ process sequoia_run {
   tag "${meta.donor_id}"
   label "week100gb"
   publishDir "${params.outdir}/${meta.donor_id}/", mode: 'copy'
-  conda 'envs/sequoia'
+  conda './envs/sequoia'
   errorStrategy = 'retry'
 
   input:
