@@ -18,7 +18,7 @@ sample_sheet <-
                full.names = TRUE) %>%
       tibble::enframe(value = "sample_dir") %>%
       dplyr::transmute(
-        donor_id = donor_id,
+        donor_id,
         sample_id = basename(sample_dir),
         bam = file.path(sample_dir, paste0(sample_id, ".sample.dupmarked.bam")),
         pindel_vcf = file.path(sample_dir, 
@@ -26,9 +26,10 @@ sample_sheet <-
         caveman_vcf = file.path(sample_dir, 
                                 paste0(sample_id, ".caveman_c.annot.vcf.gz"))
       ) %>%
-      # check if the files exist
-      dplyr::mutate(dplyr::across(c("bam", "pindel_vcf", "caveman_vcf"),
-                                  ~ ifelse(file.exists(.), ., NA)))
+      # check files exist
+      dplyr::filter(file.exists(bam),
+                    file.exists(pindel_vcf),
+                    file.exists(caveman_vcf))
   }) %>%
   dplyr::bind_rows()
 
@@ -68,7 +69,7 @@ colony_metadata <-
     names = c("donor_cosmic_id", "colony_timepoint", "donor_age_sex",
               "plate_id", "well_id", "colony_type")) %>%
   # bind together
-  dplyr::bind_rows(colony_metadata) %>%
+  dplyr::bind_rows(colony_metadata_PD55781) %>%
   dplyr::transmute(
     colony_id = PD_ID,
     donor_id = stringr::str_sub(PD_ID, 1, 7),
