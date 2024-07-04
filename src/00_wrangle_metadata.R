@@ -65,7 +65,7 @@ colony_metadata <-
   dplyr::mutate(sample_ID_in_COSMIC = gsub("well_", "",
                                            sample_ID_in_COSMIC)) %>%
   tidyr::separate_wider_delim(
-    sample_ID_in_COSMIC, delim = "_", 
+    sample_ID_in_COSMIC, delim = "_",
     names = c("donor_cosmic_id", "colony_timepoint", "donor_age_sex",
               "plate_id", "well_id", "colony_type")) %>%
   # bind together

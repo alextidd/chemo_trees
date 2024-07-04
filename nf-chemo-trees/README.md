@@ -11,7 +11,7 @@ WES vs TGS) and the variant type (SNV vs indel).
 
 2. Filter the variants.
 
-  a. Filter the `CaVEMAN` SNV output. We run Mathis Sanders' 
+  a. Filter the `CaVEMAN` SNV output. Run Mathis Sanders' 
   [`SangerLCMFiltering`](https://github.com/MathijsSanders/SangerLCMFiltering) 
   a.k.a. [`hairpin`](https://confluence.sanger.ac.uk/display/CAS/hairpin). This 
   filters out SNVs based on ASMD and CLPM values to remove cruciform DNA 
