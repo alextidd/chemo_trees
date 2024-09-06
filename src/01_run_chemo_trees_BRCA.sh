@@ -4,12 +4,17 @@
 # modules
 module load singularity
 
+# run on the BRCA donors only
+head -n1 out/metadata/sample_sheet.csv > out/metadata/sample_sheet_BRCA.csv
+cat out/metadata/sample_sheet.csv |
+grep "PD63266\|PD63267\|PD63268" \
+>> out/metadata/sample_sheet_BRCA.csv
+
 # run the workflow 
 nextflow run ../low_input_trees/ \
-    --sample_sheet out/metadata/sample_sheet.csv \
+    --sample_sheet out/metadata/sample_sheet_BRCA.csv \
     --sequencing_type WGS \
     -profile sanger_hg38 \
-    --outdir out/low_input_trees/ \
-    -w work/low_input_trees/ \
-    -N at31@sanger.ac.uk \
-    -resume
+    --outdir out \
+    -resume \
+    -N at31@sanger.ac.uk

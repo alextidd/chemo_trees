@@ -1,7 +1,5 @@
 # dirs
-wd <- "/lustre/scratch126/casm/team154pc/at31/chemo_trees/"
 canapps_dir <- "/nfs/cancer_ref01/nst_links/live/"
-setwd(wd)
 dir.create("out/metadata", showWarnings = FALSE)
 
 # libraries
@@ -33,16 +31,36 @@ sample_sheet <-
   }) %>%
   dplyr::bind_rows()
 
-# write sample sheet
+# write sample sheet for low_input_trees
 sample_sheet %>%
   readr::write_csv("out/metadata/sample_sheet.csv")
+
+# write sample sheet for process_sanger_lcm-nf
+# sample_id, pdid, bam, bai, vcf, vcf_tbi, match_normal_id, bam_match, bai_match
+# indel cols: vcf_indel  vcf_tbi_indel
+# snv cols: vcf_snv  vcf_tbi_snv
+# indels sample sheet
+sample_sheet %>%
+  dplyr::transmute(sample_id, pdid = donor_id,
+                   bam,
+                   bai = paste0(bam, ".bai"),
+                   bas = paste0(bam, ".bas"),
+                   met = paste0(bam, ".met.gz"),
+                   vcf_snp = caveman_vcf,
+                   vcf_tbi_snp = paste0(caveman_vcf, ".tbi"),
+                   vcf_indel = pindel_vcf,
+                   vcf_tbi_indel = paste0(pindel_vcf, ".tbi"),
+                   match_normal_id = "PDv38is_wgs",
+                   bam_match = "/nfs/cancer_ref01/nst_links/live/2480/PDv38is_wgs/PDv38is_wgs.sample.dupmarked.bam",
+                   bai_match = paste0(bam_match, ".bai")) %>%
+  readr::write_tsv("out/process_sanger_lcm/sample_sheet.tsv")
 
 # extract colony metadata
 colony_metadata_raw <-
   readr::read_tsv("data/colony_metadata.tsv") %>%
   dplyr::mutate(donor_id = stringr::str_sub(PD_ID, 1, 7),
                 # remove whitespaces
-                dplyr::across(where(is.character), stringr::str_remove_all, 
+                dplyr::across(where(is.character), stringr::str_remove_all,
                               pattern = stringr::fixed(" "))) %>%
   {split(., .$donor_id)}
 
@@ -50,7 +68,7 @@ colony_metadata_raw <-
 colony_metadata_PD55781 <-
   colony_metadata_raw$PD55781 %>%
   # fix colony type
-  dplyr::mutate(sample_ID_in_COSMIC = gsub("Normal_blood", "Normal-blood", 
+  dplyr::mutate(sample_ID_in_COSMIC = gsub("Normal_blood", "Normal-blood",
                                            sample_ID_in_COSMIC)) %>%
   tidyr::separate_wider_delim(
     sample_ID_in_COSMIC, delim = "_",
